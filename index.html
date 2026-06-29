@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>簡易心智圖神器</title>
+  <title>簡易MindMap神器</title>
   
   <!-- 載入 Tailwind CSS 用作排版美化 -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -21,7 +21,7 @@
   <style>
     /* 隱藏預設捲軸，統一使用觸控或滑鼠拖拉 */
     body { margin: 0; overflow: hidden; touch-action: none; }
-    input { font-family: inherit; }
+    textarea { font-family: inherit; resize: none; overflow: hidden; }
   </style>
 </head>
 <body>
@@ -168,6 +168,9 @@
 
       const handlePointerDownNode = (e, id) => {
         e.stopPropagation();
+        // 如果點擊嘅係文字輸入框，就唔好觸發拖拉，等小朋友可以專心打字
+        if (e.target.tagName.toLowerCase() === 'textarea') return;
+        
         const node = nodes.find(n => n.id === id);
         setDragInfo({ type: 'node', id, startX: e.clientX, startY: e.clientY, initNodeX: node.x, initNodeY: node.y });
         setSelectedId(id);
@@ -182,6 +185,7 @@
         setIsExporting(true);
         setSelectedId(null);
 
+        // 畀少少時間 React 收埋啲按鈕
         setTimeout(async () => {
           try {
             const padding = 100;
@@ -189,8 +193,9 @@
             const minY = Math.min(...nodes.map(n => n.y)) - padding;
             const maxX = Math.max(...nodes.map(n => n.x)) + padding;
             const maxY = Math.max(...nodes.map(n => n.y)) + padding;
-            const width = maxX - minX;
-            const height = maxY - minY;
+            // 確保畫布唔會變咗 0x0 導致出圖失敗
+            const width = Math.max(maxX - minX, 300);
+            const height = Math.max(maxY - minY, 300);
 
             const originalCanvas = document.getElementById('mindmap-canvas-inner');
             const cloneCanvas = originalCanvas.cloneNode(true);
@@ -203,24 +208,38 @@
             cloneCanvas.style.height = `${height}px`;
             cloneCanvas.style.transformOrigin = 'top left';
             
-            const originalInputs = originalCanvas.querySelectorAll('input');
-            const clonedInputs = cloneCanvas.querySelectorAll('input');
-            originalInputs.forEach((input, index) => {
-                clonedInputs[index].value = input.value;
+            // 修正 4：將 textarea 完美轉換成一般 div 文字，防止 html2canvas 截圖錯位或空白
+            const originalTextareas = originalCanvas.querySelectorAll('textarea');
+            const clonedTextareas = cloneCanvas.querySelectorAll('textarea');
+            originalTextareas.forEach((textarea, index) => {
                 const div = document.createElement('div');
-                div.textContent = input.value;
-                div.className = input.className;
-                input.parentNode.replaceChild(div, clonedInputs[index]);
+                // 讀取真實輸入嘅文字，如果冇就用 placeholder
+                div.textContent = textarea.value || textarea.placeholder;
+                div.className = textarea.className;
+                
+                // 複製關鍵排版樣式，確保截圖同睇到嘅一模一樣
+                div.style.gridArea = '1/1';
+                div.style.width = '100%';
+                div.style.height = '100%';
+                div.style.textAlign = 'center';
+                div.style.whiteSpace = 'pre-wrap';
+                div.style.wordBreak = 'break-word';
+                
+                textarea.parentNode.replaceChild(div, clonedTextareas[index]);
             });
 
+            // 隱藏所有操作按鈕
             const buttons = cloneCanvas.querySelectorAll('button');
             buttons.forEach(btn => btn.style.display = 'none');
 
             document.body.appendChild(cloneCanvas);
 
+            // 修正 4：動態偵測設備並調整 Scale，防止手機記憶體爆滿導致「儲存圖片錯誤」
+            const safeScale = (window.devicePixelRatio && window.devicePixelRatio > 1.5) ? 1.5 : 2;
+
             const canvas = await window.html2canvas(cloneCanvas, {
               backgroundColor: '#fafaf9',
-              scale: 2,
+              scale: safeScale, // 使用安全縮放比例
               width: width,
               height: height,
               logging: false,
@@ -230,8 +249,12 @@
             document.body.removeChild(cloneCanvas);
             
             const dataUrl = canvas.toDataURL('image/png');
+            if (dataUrl === 'data:,') {
+               throw new Error("產生圖片為空");
+            }
+            
             const link = document.createElement('a');
-            link.download = `心智圖_${new Date().getTime()}.png`;
+            link.download = `MindMap_${new Date().getTime()}.png`;
             link.href = dataUrl;
             document.body.appendChild(link);
             link.click();
@@ -239,21 +262,23 @@
             
           } catch (error) {
             console.error("截圖失敗:", error);
-            alert("⚠️ 儲存圖片時發生錯誤，請再試一次。");
+            alert("⚠️ 儲存圖片時發生錯誤！可能係心智圖範圍太大，請嘗試刪除太遠嘅分支再試。");
           } finally {
             setIsExporting(false);
           }
-        }, 100); 
+        }, 300); // 延遲少少確保畫面穩定先截圖
       };
 
       return (
         <div className="h-screen w-full flex flex-col bg-[#fafaf9] font-sans text-slate-800 overflow-hidden touch-none relative">
+          
+          {/* 修正 3：標題改為 MindMap神器 */}
           <div className="bg-white px-4 md:px-6 py-3 md:py-4 shadow-sm border-b border-slate-200 flex justify-between items-center z-20 shrink-0">
             <div>
               <h1 className="text-lg md:text-2xl font-bold flex items-center gap-1 md:gap-2 text-slate-800">
-                <span className="text-amber-500 text-xl md:text-3xl">✨</span> 心智圖神器
+                <span className="text-amber-500 text-xl md:text-3xl">✨</span> MindMap神器
               </h1>
-              <p className="hidden md:block text-sm text-slate-500 mt-1">自由拖拉・無限畫布・自動排版顏色</p>
+              <p className="hidden md:block text-sm text-slate-500 mt-1">自由拖拉・自動擴大輸入框・自動排版顏色</p>
             </div>
             
             <button 
@@ -317,23 +342,60 @@
                       transform: 'translate(-50%, -50%)' 
                     }}
                     onPointerDown={(e) => handlePointerDownNode(e, node.id)}
+                    onClick={(e) => { e.stopPropagation(); setSelectedId(node.id); }}
                   >
                     <div className={`
-                      relative p-3 md:p-4 transition-shadow duration-200 cursor-pointer
-                      border-2 rounded-2xl min-w-[120px] md:min-w-[140px] flex flex-col items-center justify-center
+                      relative p-3 md:p-4 transition-shadow duration-200
+                      border-2 rounded-2xl min-w-[120px] max-w-[250px] flex flex-col items-center justify-center
                       ${colorTheme.bg} ${colorTheme.border}
-                      ${isSelected ? `ring-4 ${colorTheme.ring}` : 'hover:shadow-md'}
+                      ${isSelected ? `ring-4 ${colorTheme.ring}` : 'hover:shadow-md cursor-pointer'}
                       ${isRoot ? 'shadow-md' : 'shadow-sm'}
                     `}>
-                      <input
-                        value={node.text}
-                        onChange={(e) => updateText(node.id, e.target.value)}
-                        className={`
-                          w-full bg-transparent outline-none text-center font-bold text-slate-800
-                          ${isRoot ? 'text-xl md:text-2xl' : 'text-lg md:text-xl'}
-                        `}
-                        placeholder="請輸入文字"
-                      />
+                      
+                      {/* 修正 1 & 2：使用 CSS Grid 技巧打造識得「自動撐大」嘅輸入框 */}
+                      <div style={{ display: 'grid', alignItems: 'center', justifyItems: 'center', width: '100%' }}>
+                        
+                        {/* 隱藏嘅 Span：用嚟量度文字真實大細，撐開個 Grid */}
+                        <span 
+                          className={isRoot ? 'text-xl md:text-2xl font-bold' : 'text-lg md:text-xl font-bold'}
+                          style={{ 
+                            visibility: 'hidden', 
+                            gridArea: '1/1', 
+                            whiteSpace: 'pre-wrap', 
+                            wordBreak: 'break-word',
+                            minWidth: '70px',
+                            textAlign: 'center',
+                            padding: '0 4px'
+                          }}
+                        >
+                          {node.text || '點擊打字'}
+                        </span>
+                        
+                        {/* 真正畀小朋友打字嘅 Textarea */}
+                        <textarea
+                          value={node.text}
+                          rows={1}
+                          onFocus={(e) => {
+                            // 修正 2：一撳入去，如果是預設字眼就自動清空
+                            if (node.text === '中心主題' || node.text === '新分支') {
+                              updateText(node.id, '');
+                            }
+                          }}
+                          onBlur={(e) => {
+                            // 如果冇打到字就走咗，自動補返字眼，避免小朋友蕩失路搵唔返個格
+                            if (node.text.trim() === '') {
+                              updateText(node.id, isRoot ? '中心主題' : '新分支');
+                            }
+                          }}
+                          onChange={(e) => updateText(node.id, e.target.value)}
+                          className={`
+                            w-full bg-transparent outline-none text-center font-bold text-slate-800 leading-normal
+                            ${isRoot ? 'text-xl md:text-2xl' : 'text-lg md:text-xl'}
+                          `}
+                          style={{ gridArea: '1/1', width: '100%', height: '100%' }}
+                          placeholder="點擊打字"
+                        />
+                      </div>
 
                       {isSelected && !isExporting && (
                         <div className="absolute -bottom-16 left-1/2 -translate-x-1/2 flex gap-2 md:gap-3 bg-white px-3 py-2 rounded-full shadow-lg border border-slate-100 z-50">
