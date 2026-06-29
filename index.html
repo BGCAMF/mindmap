@@ -2,7 +2,7 @@
 <html lang="zh-HK">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>簡易MindMap神器</title>
   
   <!-- 載入 Tailwind CSS 用作排版美化 -->
@@ -19,8 +19,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <style>
-    /* 隱藏預設捲軸，統一使用觸控或滑鼠拖拉 */
-    body { margin: 0; overflow: hidden; touch-action: none; }
+    /* 隱藏預設捲軸，統一使用觸控或滑鼠拖拉，防止畫面回彈 */
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; touch-action: none; background-color: #fafaf9; }
     textarea { font-family: inherit; resize: none; overflow: hidden; }
   </style>
 </head>
@@ -107,7 +107,7 @@
       };
 
       const handleZoom = (factor) => {
-        setTransform(prev => ({ ...prev, scale: Math.max(0.3, Math.min(prev.scale + factor, 2)) }));
+        setTransform(prev => ({ ...prev, scale: Math.max(0.2, Math.min(prev.scale + factor, 2.5)) }));
       };
 
       const addChild = (parentId, e) => {
@@ -168,9 +168,7 @@
 
       const handlePointerDownNode = (e, id) => {
         e.stopPropagation();
-        // 如果點擊嘅係文字輸入框，就唔好觸發拖拉，等小朋友可以專心打字
-        if (e.target.tagName.toLowerCase() === 'textarea') return;
-        
+        // 修正 2：移除之前限制拖拉嘅程式碼，而家就算篤中文字都可以隨便拖拉，極度順滑！
         const node = nodes.find(n => n.id === id);
         setDragInfo({ type: 'node', id, startX: e.clientX, startY: e.clientY, initNodeX: node.x, initNodeY: node.y });
         setSelectedId(id);
@@ -185,17 +183,15 @@
         setIsExporting(true);
         setSelectedId(null);
 
-        // 畀少少時間 React 收埋啲按鈕
         setTimeout(async () => {
           try {
-            const padding = 100;
+            const padding = 120; // 預留多啲邊界，等張圖靚啲
             const minX = Math.min(...nodes.map(n => n.x)) - padding;
             const minY = Math.min(...nodes.map(n => n.y)) - padding;
             const maxX = Math.max(...nodes.map(n => n.x)) + padding;
             const maxY = Math.max(...nodes.map(n => n.y)) + padding;
-            // 確保畫布唔會變咗 0x0 導致出圖失敗
-            const width = Math.max(maxX - minX, 300);
-            const height = Math.max(maxY - minY, 300);
+            const width = Math.max(maxX - minX, 400);
+            const height = Math.max(maxY - minY, 400);
 
             const originalCanvas = document.getElementById('mindmap-canvas-inner');
             const cloneCanvas = originalCanvas.cloneNode(true);
@@ -208,38 +204,45 @@
             cloneCanvas.style.height = `${height}px`;
             cloneCanvas.style.transformOrigin = 'top left';
             
-            // 修正 4：將 textarea 完美轉換成一般 div 文字，防止 html2canvas 截圖錯位或空白
             const originalTextareas = originalCanvas.querySelectorAll('textarea');
             const clonedTextareas = cloneCanvas.querySelectorAll('textarea');
             originalTextareas.forEach((textarea, index) => {
                 const div = document.createElement('div');
-                // 讀取真實輸入嘅文字，如果冇就用 placeholder
                 div.textContent = textarea.value || textarea.placeholder;
                 div.className = textarea.className;
                 
-                // 複製關鍵排版樣式，確保截圖同睇到嘅一模一樣
                 div.style.gridArea = '1/1';
                 div.style.width = '100%';
                 div.style.height = '100%';
                 div.style.textAlign = 'center';
                 div.style.whiteSpace = 'pre-wrap';
-                div.style.wordBreak = 'break-word';
+                // 確保截圖時都唔會斬斷英文字
+                div.style.wordBreak = 'normal';
+                div.style.overflowWrap = 'break-word';
                 
                 textarea.parentNode.replaceChild(div, clonedTextareas[index]);
             });
 
-            // 隱藏所有操作按鈕
             const buttons = cloneCanvas.querySelectorAll('button');
             buttons.forEach(btn => btn.style.display = 'none');
 
             document.body.appendChild(cloneCanvas);
 
-            // 修正 4：動態偵測設備並調整 Scale，防止手機記憶體爆滿導致「儲存圖片錯誤」
-            const safeScale = (window.devicePixelRatio && window.devicePixelRatio > 1.5) ? 1.5 : 2;
+            // 修正 4：智能縮放引擎 (Auto-Scale Engine)
+            // 就算小朋友畫到張圖極大，系統會自動計返一個安全縮放比例，防止手機彈 App 或出圖失敗
+            let safeScale = window.devicePixelRatio > 1 ? 2 : 1; 
+            const MAX_SAFE_DIMENSION = 3500; // iOS Safari 安全極限
+            const currentMaxSize = Math.max(width, height) * safeScale;
+
+            if (currentMaxSize > MAX_SAFE_DIMENSION) {
+                // 如果太大，就自動降 Level，保證一定出到圖
+                safeScale = MAX_SAFE_DIMENSION / Math.max(width, height);
+                if (safeScale < 0.5) safeScale = 0.5; // 保底唔會太模糊
+            }
 
             const canvas = await window.html2canvas(cloneCanvas, {
               backgroundColor: '#fafaf9',
-              scale: safeScale, // 使用安全縮放比例
+              scale: safeScale, 
               width: width,
               height: height,
               logging: false,
@@ -262,23 +265,23 @@
             
           } catch (error) {
             console.error("截圖失敗:", error);
-            alert("⚠️ 儲存圖片時發生錯誤！可能係心智圖範圍太大，請嘗試刪除太遠嘅分支再試。");
+            alert("⚠️ 儲存發生少少問題，請再試一次！");
           } finally {
             setIsExporting(false);
           }
-        }, 300); // 延遲少少確保畫面穩定先截圖
+        }, 300);
       };
 
       return (
-        <div className="h-screen w-full flex flex-col bg-[#fafaf9] font-sans text-slate-800 overflow-hidden touch-none relative">
+        // 修正 3：將 h-screen 改為 fixed inset-0，鎖死整個畫面大小，絕對唔會被瀏覽器網址列遮住頂部或底部
+        <div className="fixed inset-0 w-full flex flex-col bg-[#fafaf9] font-sans text-slate-800 overflow-hidden touch-none z-50">
           
-          {/* 修正 3：標題改為 MindMap神器 */}
           <div className="bg-white px-4 md:px-6 py-3 md:py-4 shadow-sm border-b border-slate-200 flex justify-between items-center z-20 shrink-0">
             <div>
               <h1 className="text-lg md:text-2xl font-bold flex items-center gap-1 md:gap-2 text-slate-800">
                 <span className="text-amber-500 text-xl md:text-3xl">✨</span> MindMap神器
               </h1>
-              <p className="hidden md:block text-sm text-slate-500 mt-1">自由拖拉・自動擴大輸入框・自動排版顏色</p>
+              <p className="hidden md:block text-sm text-slate-500 mt-1">自由拖拉・自動擴大・無限畫布</p>
             </div>
             
             <button 
@@ -295,8 +298,8 @@
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                  </svg>
               ) : <DownloadIcon />}
-              <span className="hidden md:inline">{isExporting ? '儲存中...' : '一鍵出圖 (儲存)'}</span>
-              <span className="md:hidden">{isExporting ? '儲存中...' : '出圖'}</span>
+              <span className="hidden md:inline">{isExporting ? '處理中...' : '一鍵出圖 (儲存)'}</span>
+              <span className="md:hidden">{isExporting ? '處理中...' : '出圖'}</span>
             </button>
           </div>
 
@@ -352,17 +355,17 @@
                       ${isRoot ? 'shadow-md' : 'shadow-sm'}
                     `}>
                       
-                      {/* 修正 1 & 2：使用 CSS Grid 技巧打造識得「自動撐大」嘅輸入框 */}
                       <div style={{ display: 'grid', alignItems: 'center', justifyItems: 'center', width: '100%' }}>
                         
-                        {/* 隱藏嘅 Span：用嚟量度文字真實大細，撐開個 Grid */}
+                        {/* 修正 1：設定正確的斷行規則，保證英文字不會被斬開一半 */}
                         <span 
                           className={isRoot ? 'text-xl md:text-2xl font-bold' : 'text-lg md:text-xl font-bold'}
                           style={{ 
                             visibility: 'hidden', 
                             gridArea: '1/1', 
                             whiteSpace: 'pre-wrap', 
-                            wordBreak: 'break-word',
+                            wordBreak: 'normal',       // 確保單字完整
+                            overflowWrap: 'break-word', // 只有當單字長過最大寬度先斬
                             minWidth: '70px',
                             textAlign: 'center',
                             padding: '0 4px'
@@ -371,18 +374,15 @@
                           {node.text || '點擊打字'}
                         </span>
                         
-                        {/* 真正畀小朋友打字嘅 Textarea */}
                         <textarea
                           value={node.text}
                           rows={1}
                           onFocus={(e) => {
-                            // 修正 2：一撳入去，如果是預設字眼就自動清空
                             if (node.text === '中心主題' || node.text === '新分支') {
                               updateText(node.id, '');
                             }
                           }}
                           onBlur={(e) => {
-                            // 如果冇打到字就走咗，自動補返字眼，避免小朋友蕩失路搵唔返個格
                             if (node.text.trim() === '') {
                               updateText(node.id, isRoot ? '中心主題' : '新分支');
                             }
@@ -392,7 +392,10 @@
                             w-full bg-transparent outline-none text-center font-bold text-slate-800 leading-normal
                             ${isRoot ? 'text-xl md:text-2xl' : 'text-lg md:text-xl'}
                           `}
-                          style={{ gridArea: '1/1', width: '100%', height: '100%' }}
+                          style={{ 
+                            gridArea: '1/1', width: '100%', height: '100%',
+                            wordBreak: 'normal', overflowWrap: 'break-word' // 同樣應用喺輸入框
+                          }}
                           placeholder="點擊打字"
                         />
                       </div>
@@ -423,7 +426,7 @@
           </div>
 
           {!isExporting && (
-            <div className="absolute bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-white/95 backdrop-blur-md px-6 py-3 rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.15)] border border-slate-200 z-50">
+            <div className="absolute bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-white/95 backdrop-blur-md px-6 py-3 rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.15)] border border-slate-200 z-50">
               <button onClick={() => handleZoom(-0.2)} className="p-2 text-slate-600 hover:text-amber-500 hover:bg-amber-50 rounded-full transition" title="縮小">
                 <ZoomOutIcon />
               </button>
@@ -441,7 +444,6 @@
       );
     }
 
-    // 將 React 應用渲染到網頁上
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
