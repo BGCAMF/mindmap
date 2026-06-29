@@ -42,12 +42,28 @@
 
     // 層級顏色定義
     const LEVEL_COLORS = [
-      { bg: 'bg-amber-100', border: 'border-amber-300', ring: 'ring-amber-400' },     // Level 0: 中心主題 (黃色)
-      { bg: 'bg-sky-100', border: 'border-sky-300', ring: 'ring-sky-400' },           // Level 1: 第一分支 (藍色)
-      { bg: 'bg-emerald-100', border: 'border-emerald-300', ring: 'ring-emerald-400' }, // Level 2: 第二分支 (綠色)
-      { bg: 'bg-purple-100', border: 'border-purple-300', ring: 'ring-purple-400' },    // Level 3: 第三分支 (紫色)
-      { bg: 'bg-rose-100', border: 'border-rose-300', ring: 'ring-rose-400' }           // Level 4+: 第四分支或以上 (粉紅)
+      { bg: 'bg-amber-100', border: 'border-amber-300', ring: 'ring-amber-400' },     // Level 0: 中心主題
+      { bg: 'bg-sky-100', border: 'border-sky-300', ring: 'ring-sky-400' },           // Level 1: 第一分支
+      { bg: 'bg-emerald-100', border: 'border-emerald-300', ring: 'ring-emerald-400' }, // Level 2: 第二分支
+      { bg: 'bg-purple-100', border: 'border-purple-300', ring: 'ring-purple-400' },    // Level 3: 第三分支
+      { bg: 'bg-rose-100', border: 'border-rose-300', ring: 'ring-rose-400' }           // Level 4+: 第四分支
     ];
+
+    // 【修復1】計算節點的實際寬度和高度
+    const calculateNodeDimensions = (text, isRoot) => {
+      // 根據文字長度估算寬度（每個字符約 10-12px）
+      const charWidth = 11;
+      const baseWidth = Math.max(120, text.length * charWidth + 24);
+      const maxWidth = 500; // 增加最大寬度，允許更長的文字
+      const width = Math.min(baseWidth, maxWidth);
+      
+      // 高度估算
+      const lineHeight = isRoot ? 32 : 28;
+      const lines = Math.ceil(text.length * charWidth / width);
+      const height = Math.max(lineHeight, lines * lineHeight + 24);
+      
+      return { width, height };
+    };
 
     function App() {
       const [nodes, setNodes] = useState([
@@ -168,7 +184,6 @@
 
       const handlePointerDownNode = (e, id) => {
         e.stopPropagation();
-        // 修正 2：移除之前限制拖拉嘅程式碼，而家就算篤中文字都可以隨便拖拉，極度順滑！
         const node = nodes.find(n => n.id === id);
         setDragInfo({ type: 'node', id, startX: e.clientX, startY: e.clientY, initNodeX: node.x, initNodeY: node.y });
         setSelectedId(id);
@@ -186,10 +201,30 @@
         setTimeout(async () => {
           try {
             const padding = 120; // 預留多啲邊界，等張圖靚啲
-            const minX = Math.min(...nodes.map(n => n.x)) - padding;
-            const minY = Math.min(...nodes.map(n => n.y)) - padding;
-            const maxX = Math.max(...nodes.map(n => n.x)) + padding;
-            const maxY = Math.max(...nodes.map(n => n.y)) + padding;
+            
+            // 【修復1】計算每個節點的實際邊界，包括寬度和高度
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            
+            nodes.forEach(node => {
+              const isRoot = node.id === 'root';
+              const { width, height } = calculateNodeDimensions(node.text, isRoot);
+              
+              const nodeLeft = node.x - width / 2;
+              const nodeRight = node.x + width / 2;
+              const nodeTop = node.y - height / 2;
+              const nodeBottom = node.y + height / 2;
+              
+              minX = Math.min(minX, nodeLeft);
+              maxX = Math.max(maxX, nodeRight);
+              minY = Math.min(minY, nodeTop);
+              maxY = Math.max(maxY, nodeBottom);
+            });
+            
+            minX -= padding;
+            minY -= padding;
+            maxX += padding;
+            maxY += padding;
+            
             const width = Math.max(maxX - minX, 400);
             const height = Math.max(maxY - minY, 400);
 
@@ -204,23 +239,12 @@
             cloneCanvas.style.height = `${height}px`;
             cloneCanvas.style.transformOrigin = 'top left';
             
+            // 【修復1】確保 textarea 內容被正確複製
             const originalTextareas = originalCanvas.querySelectorAll('textarea');
             const clonedTextareas = cloneCanvas.querySelectorAll('textarea');
-            originalTextareas.forEach((textarea, index) => {
-                const div = document.createElement('div');
-                div.textContent = textarea.value || textarea.placeholder;
-                div.className = textarea.className;
-                
-                div.style.gridArea = '1/1';
-                div.style.width = '100%';
-                div.style.height = '100%';
-                div.style.textAlign = 'center';
-                div.style.whiteSpace = 'pre-wrap';
-                // 確保截圖時都唔會斬斷英文字
-                div.style.wordBreak = 'normal';
-                div.style.overflowWrap = 'break-word';
-                
-                textarea.parentNode.replaceChild(div, clonedTextareas[index]);
+            originalTextareas.forEach((orig, index) => {
+                clonedTextareas[index].innerHTML = orig.value || orig.placeholder;
+                clonedTextareas[index].value = orig.value || orig.placeholder;
             });
 
             const buttons = cloneCanvas.querySelectorAll('button');
@@ -228,16 +252,14 @@
 
             document.body.appendChild(cloneCanvas);
 
-            // 修正 4：智能縮放引擎 (Auto-Scale Engine)
-            // 就算小朋友畫到張圖極大，系統會自動計返一個安全縮放比例，防止手機彈 App 或出圖失敗
+            // 智能縮放引擎 (Auto-Scale Engine)
             let safeScale = window.devicePixelRatio > 1 ? 2 : 1; 
-            const MAX_SAFE_DIMENSION = 3500; // iOS Safari 安全極限
+            const MAX_SAFE_DIMENSION = 3500; 
             const currentMaxSize = Math.max(width, height) * safeScale;
 
             if (currentMaxSize > MAX_SAFE_DIMENSION) {
-                // 如果太大，就自動降 Level，保證一定出到圖
                 safeScale = MAX_SAFE_DIMENSION / Math.max(width, height);
-                if (safeScale < 0.5) safeScale = 0.5; // 保底唔會太模糊
+                if (safeScale < 0.5) safeScale = 0.5;
             }
 
             const canvas = await window.html2canvas(cloneCanvas, {
@@ -273,7 +295,6 @@
       };
 
       return (
-        // 修正 3：將 h-screen 改為 fixed inset-0，鎖死整個畫面大小，絕對唔會被瀏覽器網址列遮住頂部或底部
         <div className="fixed inset-0 w-full flex flex-col bg-[#fafaf9] font-sans text-slate-800 overflow-hidden touch-none z-50">
           
           <div className="bg-white px-4 md:px-6 py-3 md:py-4 shadow-sm border-b border-slate-200 flex justify-between items-center z-20 shrink-0">
@@ -320,7 +341,9 @@
                   return (
                     <path
                       key={`line-${node.id}`}
-                      d={`M ${parent.x} ${parent.y} C ${parent.x + (node.x - parent.x)/2} ${parent.y}, ${parent.x + (node.x - parent.x)/2} ${node.y}, ${node.x} ${node.y}`}
+                      d={`M ${parent.x} ${parent.y} C ${parent.x + (node.x - parent.x)/2} ${parent.y}
+                         ${parent.x + (node.x - parent.x)/2} ${node.y}
+                         ${node.x} ${node.y}`}
                       stroke="#cbd5e1"
                       strokeWidth="4"
                       fill="none"
@@ -334,6 +357,9 @@
                 const isSelected = selectedId === node.id;
                 const isRoot = node.id === 'root';
                 const colorTheme = LEVEL_COLORS[Math.min(node.depth || 0, LEVEL_COLORS.length - 1)];
+                
+                // 【修復2】動態計算節點寬度
+                const { width: nodeWidth, height: nodeHeight } = calculateNodeDimensions(node.text, isRoot);
 
                 return (
                   <div
@@ -349,29 +375,35 @@
                   >
                     <div className={`
                       relative p-3 md:p-4 transition-shadow duration-200
-                      border-2 rounded-2xl min-w-[120px] max-w-[250px] flex flex-col items-center justify-center
+                      border-2 rounded-2xl flex flex-col items-center justify-center
                       ${colorTheme.bg} ${colorTheme.border}
                       ${isSelected ? `ring-4 ${colorTheme.ring}` : 'hover:shadow-md cursor-pointer'}
                       ${isRoot ? 'shadow-md' : 'shadow-sm'}
-                    `}>
+                    `}
+                    style={{
+                      width: `${nodeWidth}px`,
+                      height: `${nodeHeight}px`,
+                      minWidth: '120px'
+                    }}>
                       
-                      <div style={{ display: 'grid', alignItems: 'center', justifyItems: 'center', width: '100%' }}>
+                      <div style={{ display: 'grid', alignItems: 'center', justifyItems: 'center', width: '100%', height: '100%' }}>
                         
-                        {/* 修正 1：設定正確的斷行規則，保證英文字不會被斬開一半 */}
+                        {/* 【修復2】隱藏的 span 用於測量實際文字寬度 */}
                         <span 
                           className={isRoot ? 'text-xl md:text-2xl font-bold' : 'text-lg md:text-xl font-bold'}
                           style={{ 
                             visibility: 'hidden', 
                             gridArea: '1/1', 
                             whiteSpace: 'pre-wrap', 
-                            wordBreak: 'normal',       // 確保單字完整
-                            overflowWrap: 'break-word', // 只有當單字長過最大寬度先斬
-                            minWidth: '70px',
+                            wordBreak: 'break-word',       
+                            overflowWrap: 'break-word',
                             textAlign: 'center',
-                            padding: '0 4px'
+                            padding: '12px',
+                            margin: '0',
+                            width: '100%'
                           }}
                         >
-                          {node.text || '點擊打字'}
+                          {node.text}
                         </span>
                         
                         <textarea
@@ -389,12 +421,20 @@
                           }}
                           onChange={(e) => updateText(node.id, e.target.value)}
                           className={`
-                            w-full bg-transparent outline-none text-center font-bold text-slate-800 leading-normal
+                            bg-transparent outline-none text-center font-bold text-slate-800 leading-normal
                             ${isRoot ? 'text-xl md:text-2xl' : 'text-lg md:text-xl'}
                           `}
                           style={{ 
-                            gridArea: '1/1', width: '100%', height: '100%',
-                            wordBreak: 'normal', overflowWrap: 'break-word' // 同樣應用喺輸入框
+                            gridArea: '1/1', 
+                            width: '100%', 
+                            height: '100%',
+                            wordBreak: 'break-word', 
+                            overflowWrap: 'break-word',
+                            padding: '12px', 
+                            margin: '0', 
+                            border: 'none',
+                            resize: 'none',
+                            overflow: 'hidden'
                           }}
                           placeholder="點擊打字"
                         />
